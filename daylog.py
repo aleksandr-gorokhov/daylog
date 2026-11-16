@@ -9,8 +9,12 @@
 Данные в $DAYLOG_DIR (по умолчанию ~/.local/share/daylog), по каталогу на день:
 captures.jsonl, minutes.jsonl, report.md и report.json (таймлайн для приложения).
 
+Сборщик снимает экраны каждую минуту, пока Mac не спит, даже если ввода нет. Если ввода
+с клавиатуры и мыши не было 5 минут и дольше, минута получает пометку "idle" («нет ввода»).
+
 У каждой описанной минуты есть категория: work — рабочее, nonwork — нерабочее,
-idle — ничего не делал (только явный простой: экран блокировки, заставка).
+idle — ничего не делал (явный простой на экране или «нет ввода» без созвона на экране).
+Созвон без ввода — рабочий, если на экране не видно явно личного звонка.
 Что для тебя работа, можно описать своими словами в $DAYLOG_DIR/work.md.
 
 `run` держит блокировку на $DAYLOG_DIR/collector.lock (в файле PID сборщика),
@@ -34,7 +38,7 @@ from pathlib import Path
 DATA = Path(os.environ.get("DAYLOG_DIR", Path.home() / ".local/share/daylog"))
 MODEL = os.environ.get("DAYLOG_MODEL", "claude-opus-5-5")
 INTERVAL = 60        # секунд между кадрами
-IDLE_SEC = 180       # нет ввода дольше — считаем, что отошёл, кадр не снимаем
+IDLE_SEC = 300       # нет ввода столько и дольше — минута с пометкой idle («нет ввода»)
 CHUNK = 5            # минут на один вызов LLM
 MAX_SIDE = 1600      # до какого размера ужимать кадр
 KEEP_FRAMES = os.environ.get("DAYLOG_KEEP_FRAMES") == "1"  # иначе кадры удаляются после описания
@@ -48,7 +52,11 @@ CATEGORY_RULES = """Категория минуты (поле category):
 - nonwork — не работа: личные переписки, развлечения, новости, покупки, личные дела;
 - idle — ничего не делал. Только если занятия явно нет: экран блокировки, заставка,
   пустой рабочий стол без открытых окон. Экран, не изменившийся с прошлой минуты, — не простой:
-  человек мог читать. При сомнении выбирай work или nonwork по содержанию экрана."""
+  человек мог читать. При сомнении выбирай work или nonwork по содержанию экрана.
+Если у минуты пометка «нет ввода» (5 минут и дольше никто не трогал клавиатуру и мышь):
+- на снимке идёт созвон (окно Zoom, Google Meet, huddle в Slack или другого звонка) — work,
+  а если звонок явно личный (Telegram, FaceTime с личным контактом) — nonwork;
+- созвона на снимке нет — idle, что бы ни было открыто на экране."""
 DESCRIBE_SYSTEM = """Ты ведёшь журнал рабочего дня человека по снимкам его экранов.
 На каждую минуту даны снимки всех мониторов и название активного приложения.
 Для каждой минуты напиши одну короткую строку по-русски: что человек делал.
@@ -58,6 +66,8 @@ DESCRIBE_SYSTEM = """Ты ведёшь журнал рабочего дня че
 Активное приложение подсказывает, на каком мониторе шла работа; второй монитор упоминай,
 только если он явно часть занятия. Пиши то, что видно на снимке, без догадок.
 Если соседние минуты про одно и то же, формулируй их одинаково.
+Если у минуты пометка «нет ввода», человек не трогал клавиатуру и мышь: при созвоне на снимке
+пиши «слушал созвон в Zoom „тема“», иначе — «пауза, на экране Slack #core».
 Пароли, токены и текст личных переписок не цитируй."""
 
 REPORT_SYSTEM = """Тебе дан поминутный журнал дня: «ЧЧ:ММ | категория | приложение | что делал».
@@ -215,18 +225,30 @@ def cmd_run():
         p.unlink()
     while True:
         time.sleep(INTERVAL - time.time() % INTERVAL)  # ровно на границе минуты
-        now = dt.datetime.now()
-        day, hhmm = f"{now:%Y-%m-%d}", f"{now:%H%M}"
-        if idle_seconds() > IDLE_SEC:
-            continue
-        frames = capture(day, hhmm)
-        if not frames:
-            continue
-        d = day_dir(day)
-        append_jsonl(d / "captures.jsonl", {"t": f"{now:%H:%M}", "app": front_app(), "frames": frames})
-        if len(pending(d)) >= CHUNK:
-            subprocess.Popen([sys.executable, __file__, "summarize", day],
-                             stdout=(d / "summarize.log").open("a"), stderr=subprocess.STDOUT)
+        record_minute(dt.datetime.now())
+
+
+def record_minute(now):
+    """Одна минута сборщика: снимает экраны, даже если ввода нет. Возвращает строку,
+    дописанную в captures.jsonl, или None, если снять не удалось.
+
+    Нет ввода IDLE_SEC и дольше — строка получает "idle": true, и LLM по снимку решает,
+    пауза это или созвон.
+    """
+    day, hhmm = f"{now:%Y-%m-%d}", f"{now:%H%M}"
+    idle = idle_seconds() >= IDLE_SEC
+    frames = capture(day, hhmm)
+    if not frames:
+        return None
+    row = {"t": f"{now:%H:%M}", "app": front_app(), "frames": frames}
+    if idle:
+        row["idle"] = True
+    d = day_dir(day)
+    append_jsonl(d / "captures.jsonl", row)
+    if len(pending(d)) >= CHUNK:
+        subprocess.Popen([sys.executable, __file__, "summarize", day],
+                         stdout=(d / "summarize.log").open("a"), stderr=subprocess.STDOUT)
+    return row
 
 
 # ---------- LLM ----------
@@ -275,7 +297,8 @@ def cmd_summarize(day, flush=False):
                 lines += [f"  {m['t']} {m['activity']}" for m in prev]
             lines.append("Минуты:")
             for c in chunk:
-                lines.append(f"  {c['t']} | активное приложение: {c['app'] or '?'} | файлы: "
+                idle = " | нет ввода с клавиатуры и мыши 5 минут и дольше" if c.get("idle") else ""
+                lines.append(f"  {c['t']} | активное приложение: {c['app'] or '?'}{idle} | файлы: "
                              + ", ".join(f"frames/{f}" for f in c["frames"]))
             try:
                 system = DESCRIBE_SYSTEM + "\n\n" + category_rules()
