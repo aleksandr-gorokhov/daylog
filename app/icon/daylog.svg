@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Исходник иконки daylog: cd app && pnpm tauri icon icon/daylog.svg -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2D3342"/>
+      <stop offset="1" stop-color="#15181F"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <clipPath id="strip">
+      <rect x="190" y="420" width="644" height="150" rx="26"/>
+    </clipPath>
+  </defs>
+
+  <!-- подложка по сетке иконок macOS: 824×824 с отступом 100 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="#fff" stroke-opacity="0.07" stroke-width="2"/>
+
+  <!-- запись идёт -->
+  <circle cx="236" cy="252" r="60" fill="#FF5A5F" opacity="0.16"/>
+  <circle cx="236" cy="252" r="34" fill="#FF5A5F"/>
+
+  <!-- деления часов над полосой -->
+  <g fill="#fff" fill-opacity="0.28">
+    <rect x="188" y="384" width="4" height="18" rx="2"/>
+    <rect x="349" y="384" width="4" height="18" rx="2"/>
+    <rect x="510" y="384" width="4" height="18" rx="2"/>
+    <rect x="671" y="384" width="4" height="18" rx="2"/>
+    <rect x="832" y="384" width="4" height="18" rx="2"/>
+  </g>
+
+  <!-- полоса дня: отрезки по приложениям и пропуски -->
+  <g clip-path="url(#strip)">
+    <rect x="190" y="420" width="644" height="150" fill="#fff" fill-opacity="0.07"/>
+    <rect x="190" y="420" width="96" height="150" fill="#E8B83F"/>
+    <rect x="286" y="420" width="34" height="150" fill="#E5604A"/>
+    <rect x="360" y="420" width="120" height="150" fill="#C850C0"/>
+    <rect x="480" y="420" width="26" height="150" fill="#4FC46B"/>
+    <rect x="566" y="420" width="90" height="150" fill="#4C7FE6"/>
+    <rect x="656" y="420" width="40" height="150" fill="#E8B83F"/>
+    <rect x="766" y="420" width="68" height="150" fill="#E5604A"/>
+  </g>
+
+  <!-- поминутный журнал -->
+  <circle cx="212" cy="660" r="15" fill="#E8B83F"/>
+  <rect x="250" y="647" width="470" height="26" rx="13" fill="#fff" fill-opacity="0.34"/>
+  <circle cx="212" cy="726" r="15" fill="#C850C0"/>
+  <rect x="250" y="713" width="380" height="26" rx="13" fill="#fff" fill-opacity="0.22"/>
+  <circle cx="212" cy="792" r="15" fill="#4C7FE6"/>
+  <rect x="250" y="779" width="430" height="26" rx="13" fill="#fff" fill-opacity="0.22"/>
+</svg>
