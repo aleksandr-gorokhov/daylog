@@ -175,7 +175,6 @@ pub struct DaySummary {
     pub active_minutes: usize,
     /// Минуты с категорией «рабочее».
     pub work_minutes: usize,
-    pub has_report: bool,
 }
 
 fn read_captures(dir: &Path) -> io::Result<Vec<CaptureRow>> {
@@ -234,7 +233,6 @@ pub fn list_days(data_dir: &Path) -> io::Result<Vec<DaySummary>> {
         days.push(DaySummary {
             active_minutes: active_minutes(&captures),
             work_minutes: minutes.iter().filter(|m| m.category == Some(Category::Work)).count(),
-            has_report: dir.join("report.json").is_file(),
             day: name,
         });
     }
@@ -476,7 +474,6 @@ mod tests {
         write(&d, "captures.jsonl", &cap("09:00", "Arc"));
         write(&d, "report.md", "# 2026-11-16\n");
         assert_eq!(get_day(tmp.path(), "2026-11-16").unwrap().report, None);
-        assert!(!list_days(tmp.path()).unwrap()[0].has_report);
     }
 
     #[test]
@@ -493,8 +490,8 @@ mod tests {
         assert_eq!(
             days,
             vec![
-                DaySummary { day: "2026-11-16".into(), active_minutes: 0, work_minutes: 0, has_report: true },
-                DaySummary { day: "2026-11-15".into(), active_minutes: 2, work_minutes: 0, has_report: false },
+                DaySummary { day: "2026-11-16".into(), active_minutes: 0, work_minutes: 0 },
+                DaySummary { day: "2026-11-15".into(), active_minutes: 2, work_minutes: 0 },
             ]
         );
     }

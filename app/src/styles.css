@@ -205,13 +205,6 @@ time {
   color: var(--accent);
 }
 
-.report-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 /* ---------- шапка ---------- */
 
 .header {

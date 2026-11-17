@@ -26,7 +26,6 @@ export function DayList(props: {
             <span className="num">
               работа {formatDuration(d.work_minutes)} из {formatDuration(d.active_minutes)}
             </span>
-            {d.has_report && <i className="report-dot" title="отчёт собран" aria-label="отчёт собран" />}
           </span>
         </button>
       ))}
