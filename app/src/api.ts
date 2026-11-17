@@ -10,7 +10,6 @@ export interface DaySummary {
   day: string;
   active_minutes: number;
   work_minutes: number;
-  has_report: boolean;
 }
 
 export interface Interval {

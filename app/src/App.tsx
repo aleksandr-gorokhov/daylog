@@ -46,7 +46,7 @@ export default function App() {
   const [day, setDay] = useState<Day | null>(null);
   const [dayError, setDayError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<Tab>("timeline");
+  const [tab, setTab] = useState<Tab>("minutes");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryKey | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
@@ -245,19 +245,13 @@ export default function App() {
         <div className="body">
           <section className="content">
             <div className="tabs" role="tablist">
-              <button role="tab" aria-selected={tab === "timeline"} onClick={() => setTab("timeline")}>
-                Таймлайн
-              </button>
               <button role="tab" aria-selected={tab === "minutes"} onClick={() => setTab("minutes")}>
                 Минуты
               </button>
+              <button role="tab" aria-selected={tab === "timeline"} onClick={() => setTab("timeline")}>
+                Таймлайн
+              </button>
             </div>
-            <TimelineTab
-              report={day.report}
-              active={tab === "timeline"}
-              running={reportRunning}
-              onGenerate={() => generateReport(day.day)}
-            />
             <MinutesTab
               day={day.day}
               minutes={minutes}
@@ -267,6 +261,12 @@ export default function App() {
               categoryFilter={categoryFilter}
               onClearCategory={() => setCategoryFilter(null)}
               focus={focus}
+            />
+            <TimelineTab
+              report={day.report}
+              active={tab === "timeline"}
+              running={reportRunning}
+              onGenerate={() => generateReport(day.day)}
             />
           </section>
           <CategorySummary

@@ -13,7 +13,7 @@ export function TimelineTab(props: {
     return (
       <div className="timeline empty-state" hidden={!active}>
         <p>Отчёт за этот день ещё не собран.</p>
-        <p className="muted">LLM склеит минуты в интервалы, как `daylog.py report`.</p>
+        <p className="muted">LLM склеит минуты в крупные блоки занятий, как `daylog.py report`.</p>
         <ReportButton running={running} hasReport={false} onClick={onGenerate} />
       </div>
     );
