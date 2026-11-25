@@ -14,6 +14,11 @@ import {
   intervalMinutes,
   localDay,
   type Minute,
+  type Pause,
+  pauseTarget,
+  pauseTotals,
+  pauseTotalsLabel,
+  plural,
   stripRuns,
   toMin,
   withGaps,
@@ -161,5 +166,53 @@ describe("полоса дня", () => {
       { start: 544, length: 1, category: "none", described: false },
       { start: 546, length: 1, category: "none", described: false },
     ]);
+  });
+});
+
+describe("паузы", () => {
+  const pause = (start: string, end: string, reason: string | null = null): Pause => ({
+    start,
+    end,
+    minutes: toMin(end) - toMin(start),
+    reason,
+    before: null,
+  });
+
+  it("итоги над списком", () => {
+    const pauses = [pause("11:46", "11:56", "кофе"), pause("12:20", "12:45"), pause("14:17", "14:22", "устал"), pause("14:30", "14:36")];
+    expect(pauseTotals(pauses)).toEqual({ count: 4, minutes: 46, withoutReason: 2 });
+    expect(pauseTotalsLabel(pauseTotals(pauses))).toBe("4 паузы · 46 мин");
+    expect(pauseTotalsLabel(pauseTotals([pause("10:00", "11:05", "обед")]))).toBe("1 пауза · 1 ч 5 мин");
+  });
+
+  it("пустой список", () => {
+    expect(pauseTotals([])).toEqual({ count: 0, minutes: 0, withoutReason: 0 });
+    expect(pauseTotalsLabel(pauseTotals([]))).toBe("пауз нет");
+  });
+
+  it("форма слова по числу", () => {
+    const forms = ["пауза", "паузы", "пауз"] as const;
+    expect([1, 2, 4, 5, 7, 10, 11, 12, 14, 21, 22, 25, 101, 111].map((n) => plural(n, forms))).toEqual([
+      "пауза", "паузы", "паузы", "пауз", "пауз", "пауз", "пауз", "пауз", "пауз", "пауза", "паузы", "пауз", "пауза", "пауз",
+    ]);
+  });
+
+  it("клик ведёт к первой минуте паузы", () => {
+    const minutes = [...range("14:18", 4, "work"), ...range("14:22", 8, "idle"), ...range("14:30", 2, "work")];
+    expect(pauseTarget(minutes, pause("14:22", "14:30"))).toBe("14:22");
+  });
+
+  it("пауза начинается с пропуска: первая записанная минута после него", () => {
+    // 12:01–12:15 не записаны
+    const minutes = [m("12:00"), m("12:16"), m("12:17")];
+    expect(pauseTarget(minutes, pause("12:01", "12:16"))).toBe("12:16");
+    // пропуск, затем минуты «нет ввода»: первая из них
+    const mixed = [m("15:08"), ...range("15:13", 2, "idle"), m("15:44")];
+    expect(pauseTarget(mixed, pause("15:09", "15:44"))).toBe("15:13");
+  });
+
+  it("нет минут не раньше начала паузы", () => {
+    expect(pauseTarget([m("09:00")], pause("10:00", "10:10"))).toBeNull();
+    expect(pauseTarget([], pause("10:00", "10:10"))).toBeNull();
   });
 });

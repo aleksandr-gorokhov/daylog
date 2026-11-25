@@ -1,23 +1,31 @@
 pub mod collector;
 pub mod data;
+pub mod pauses;
 pub mod procs;
 pub mod report;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
 use collector::{Collector, CollectorError, CollectorStatus};
+use pauses::{PausePrompt, Prompts};
 use procs::Runtime;
 use report::{ClassifyJobs, ClassifyStart, ReportJobs};
+
+/// Метка окна с вопросом о причине паузы (`tauri.conf.json`).
+const PROMPT_WINDOW: &str = "pause-prompt";
 
 struct AppState {
     rt: Runtime,
     collector: Collector,
     jobs: Arc<ReportJobs>,
     classify: Arc<ClassifyJobs>,
+    /// Вопрос о причине паузы: о какой паузе спрашивать, отложен ли он, показано ли окно.
+    prompts: Prompts,
     /// `state.json` в каталоге конфигурации приложения: `{"recording": bool}`.
     state_file: PathBuf,
     resume_attempted: AtomicBool,
@@ -118,6 +126,66 @@ fn classify_day(app: AppHandle, s: State<AppState>, day: String) -> Result<Class
     })
 }
 
+/// Применяет результат пересчёта вопроса: отправляет вопрос окну, показывает или прячет
+/// его и обновляет число на значке в Dock.
+///
+/// Окно показывается через `show()` без `set_focus()`: приложение при этом не
+/// активируется, и ввод с клавиатуры остаётся у приложения, в котором работает пользователь.
+fn apply_prompt_update(app: &AppHandle, update: pauses::Update) {
+    if let Some(prompt) = update.prompt {
+        let _ = app.emit("pause-prompt", prompt);
+    }
+    if let (Some(show), Some(window)) = (update.window, app.get_webview_window(PROMPT_WINDOW)) {
+        let _ = if show { window.show() } else { window.hide() };
+    }
+    if let (Some(count), Some(window)) = (update.badge, app.get_webview_window("main")) {
+        let _ = window.set_badge_count((count > 0).then_some(count as i64));
+    }
+}
+
+/// Пересчитывает вопрос по сегодняшнему дню и времени без ввода. Зовётся фоновым потоком
+/// раз в `pauses::TICK` и сразу после записи причины.
+fn refresh_prompt(app: &AppHandle) {
+    let s = app.state::<AppState>();
+    let update = s.prompts.refresh(&s.rt.data_dir, &pauses::today(), pauses::idle_seconds(), Instant::now());
+    apply_prompt_update(app, update);
+}
+
+/// «Позже»: прячет окно с вопросом и откладывает его.
+fn snooze_prompt(app: &AppHandle) {
+    let update = app.state::<AppState>().prompts.snooze(Instant::now());
+    apply_prompt_update(app, update);
+}
+
+/// Причина паузы за отрезок дня. Файл дня приложение не трогает: строку дописывает
+/// `daylog.py pause`. При успехе — событие `pauses-changed` с днём, и окно с вопросом
+/// сразу переходит к следующей паузе без причины.
+#[tauri::command(async)]
+fn set_pause_reason(
+    app: AppHandle,
+    s: State<AppState>,
+    day: String,
+    start: String,
+    end: String,
+    reason: String,
+) -> Result<(), String> {
+    pauses::write_reason(&s.rt, &day, &start, &end, &reason)?;
+    let _ = app.emit("pauses-changed", pauses::PausesChanged { day });
+    refresh_prompt(&app);
+    Ok(())
+}
+
+/// Вопрос, который сейчас должно показывать окно `pause-prompt`; `None` — спрашивать не о чем.
+#[tauri::command]
+fn pause_prompt(s: State<AppState>) -> Option<PausePrompt> {
+    s.prompts.current()
+}
+
+#[tauri::command]
+fn snooze_pause_prompt(app: AppHandle) {
+    snooze_prompt(&app);
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -135,16 +203,30 @@ pub fn run() {
                 collector: Collector::default(),
                 jobs: Arc::new(ReportJobs::default()),
                 classify: Arc::new(ClassifyJobs::default()),
+                prompts: Prompts::default(),
                 state_file,
                 resume_attempted: AtomicBool::new(false),
+            });
+            // Вопрос о причине паузы не зависит от окон: поток следит за данными дня и
+            // временем без ввода, даже когда главное окно закрыто. Первый пересчёт — через
+            // один шаг, чтобы окно с вопросом успело загрузиться.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(pauses::TICK);
+                refresh_prompt(&handle);
             });
             Ok(())
         })
         // Закрытие окна только прячет его: запись продолжается, окно возвращает клик по Dock.
+        // Закрытие окна с вопросом — то же, что «Позже».
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label() == PROMPT_WINDOW {
+                    snooze_prompt(window.app_handle());
+                } else {
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -158,6 +240,9 @@ pub fn run() {
             generate_report,
             reports_in_progress,
             classify_day,
+            set_pause_reason,
+            pause_prompt,
+            snooze_pause_prompt,
         ])
         .build(tauri::generate_context!())
         .expect("не удалось запустить daylog");

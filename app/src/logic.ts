@@ -1,4 +1,4 @@
-// Чистые функции экрана: время, пропуски, фильтр, итоги по категориям.
+// Чистые функции экрана: время, пропуски, фильтр, итоги по категориям, паузы.
 
 export type Category = "work" | "nonwork" | "idle";
 
@@ -9,6 +9,19 @@ export interface Minute {
   activity: string | null;
   /** null — минута не описана или описана без категории. */
   category: Category | null;
+}
+
+/** Пауза дня: отрезок из минут «нет ввода» и незаписанных минут, без созвонов. */
+export interface Pause {
+  /** Первая минута паузы. */
+  start: string;
+  /** Минута после последней; «24:00», если пауза идёт до полуночи. */
+  end: string;
+  minutes: number;
+  /** null — пауза без причины. */
+  reason: string | null;
+  /** Описание последней описанной минуты перед паузой; null — такой минуты нет. */
+  before: string | null;
 }
 
 /** «ЧЧ:ММ» → минуты от начала суток. */
@@ -33,6 +46,16 @@ export function formatDuration(minutes: number): string {
 export function formatShare(share: number): string {
   if (share > 0 && share < 0.005) return "<1%";
   return `${Math.round(share * 100)}%`;
+}
+
+/** Форма слова по числу: `plural(2, ["пауза", "паузы", "пауз"])` → «паузы». */
+export function plural(n: number, forms: readonly [string, string, string]): string {
+  const tens = Math.abs(n) % 100;
+  const ones = tens % 10;
+  if (tens >= 11 && tens <= 14) return forms[2];
+  if (ones === 1) return forms[0];
+  if (ones >= 2 && ones <= 4) return forms[1];
+  return forms[2];
 }
 
 export function appLabel(app: string): string {
@@ -120,6 +143,36 @@ export function categoryBreakdown(minutes: Minute[]): CategoryShare[] {
 /** Рабочие минуты дня. */
 export function workMinutes(minutes: Minute[]): number {
   return minutes.filter((m) => m.category === "work").length;
+}
+
+export interface PauseTotals {
+  count: number;
+  /** Суммарная длительность пауз в минутах. */
+  minutes: number;
+  withoutReason: number;
+}
+
+/** Итоги над списком пауз. */
+export function pauseTotals(pauses: Pause[]): PauseTotals {
+  return {
+    count: pauses.length,
+    minutes: pauses.reduce((sum, p) => sum + p.minutes, 0),
+    withoutReason: pauses.filter((p) => p.reason === null).length,
+  };
+}
+
+/** «7 пауз · 57 мин»; пустой список — «пауз нет». */
+export function pauseTotalsLabel(totals: PauseTotals): string {
+  if (totals.count === 0) return "пауз нет";
+  return `${totals.count} ${plural(totals.count, ["пауза", "паузы", "пауз"])} · ${formatDuration(totals.minutes)}`;
+}
+
+/**
+ * Минута журнала, к которой ведёт клик по паузе: первая записанная не раньше её начала.
+ * У паузы, которая начинается с пропуска, это первая минута после него. `minutes` — по возрастанию.
+ */
+export function pauseTarget(minutes: Minute[], pause: Pause): string | null {
+  return minutes.find((m) => m.t >= pause.start)?.t ?? null;
 }
 
 /** Диапазон полосы дня: от часа первой минуты до часа после последней, в минутах суток. */

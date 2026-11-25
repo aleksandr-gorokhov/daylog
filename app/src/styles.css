@@ -653,16 +653,17 @@ time {
   color: var(--faint);
 }
 
-/* ---------- разбивка по приложениям ---------- */
+/* ---------- правая колонка: итоги дня и паузы ---------- */
 
-.summary {
+.side {
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   border-left: 1px solid var(--border);
   padding: 12px 10px 16px;
 }
 
-.summary h2 {
+.side h2 {
   padding: 0 8px 8px;
   font-size: 12px;
   font-weight: 600;
@@ -744,5 +745,195 @@ time {
   margin: 0;
   padding: 0 8px;
   color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- паузы ---------- */
+
+.pauses {
+  margin-top: 18px;
+}
+
+.pauses-total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  padding: 0 8px 6px;
+}
+
+.pauses-missing {
+  color: var(--stale-fg);
+}
+
+.pauses ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pause {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  margin-bottom: 2px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.pause.no-reason {
+  background: var(--stale-bg);
+}
+
+.pause-time,
+.pause-reason {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.pause-time {
+  white-space: nowrap;
+}
+
+.pause-time:hover,
+.pause-reason:hover {
+  color: var(--accent);
+}
+
+.pause-dur {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pause-reason,
+.pause-input,
+.pause-error {
+  grid-column: 1 / -1;
+}
+
+.pause-reason {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.pause-input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+
+.pause-input:focus {
+  border-color: var(--accent);
+}
+
+.pause-error {
+  color: var(--banner-fg);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- окно с вопросом о причине паузы ---------- */
+
+.prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 16px 18px 14px;
+  overflow-y: auto;
+}
+
+/* Содержимое не сжимается: что не поместилось, прокручивается, а не пропадает. */
+.prompt > * {
+  flex: none;
+}
+
+.prompt-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.prompt h1 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.prompt-pause {
+  font-size: 14px;
+}
+
+.prompt-before {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.prompt-input {
+  width: 100%;
+  margin-top: 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.prompt-input:focus {
+  border-color: var(--accent);
+}
+
+.prompt-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prompt-chip {
+  max-width: 130px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.prompt-error {
+  margin: 0;
+  max-height: 2.9em;
+  color: var(--banner-fg);
+}
+
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.prompt-remaining {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
 }

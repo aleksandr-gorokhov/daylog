@@ -5,9 +5,12 @@
   daylog.py report [YYYY-MM-DD]   таймлайн за день (по умолчанию сегодня)
   daylog.py summarize             описать накопленные кадры (сборщик зовёт сам)
   daylog.py classify [YYYY-MM-DD] разметить категориями уже описанные минуты без категории
+  daylog.py pause YYYY-MM-DD ЧЧ:ММ ЧЧ:ММ причина
+                                  записать причину паузы за этот отрезок дня
 
 Данные в $DAYLOG_DIR (по умолчанию ~/.local/share/daylog), по каталогу на день:
-captures.jsonl, minutes.jsonl, report.md и report.json (таймлайн для приложения).
+captures.jsonl, minutes.jsonl, report.md и report.json (таймлайн для приложения),
+pauses.jsonl (причины пауз: зачем отходил от компьютера).
 
 Сборщик снимает экраны каждую минуту, пока Mac не спит, даже если ввода нет, и пишет
 в строку минуты, сколько секунд не было ввода ("idle_sec"). Если ввода с клавиатуры и мыши
@@ -449,6 +452,38 @@ def cmd_report(day):
     print(f"Сохранено: {d / 'report.md'}", file=sys.stderr)
 
 
+# ---------- причины пауз ----------
+
+PAUSE_USAGE = "daylog.py pause ГГГГ-ММ-ДД ЧЧ:ММ ЧЧ:ММ причина"
+
+
+def cmd_pause(day, start, end, reason):
+    """Дописывает в pauses.jsonl дня причину паузы за отрезок [start, end).
+
+    Сами паузы по данным дня считает приложение; причина относится к паузе, с которой
+    пересекается её отрезок, из нескольких строк действует последняя. Конец — минута после
+    последней минуты паузы, поэтому у паузы до полуночи он «24:00». Остальные файлы дня
+    не меняются, каталог дня не создаётся (day_dir() создал бы его).
+    """
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day):
+        sys.exit(f"daylog: некорректный день {day!r}, нужен вид ГГГГ-ММ-ДД")
+    d = DATA / day
+    if not d.is_dir():
+        sys.exit(f"daylog: нет данных за {day}")
+    minute = r"([01][0-9]|2[0-3]):[0-5][0-9]"
+    if not re.fullmatch(minute, start):
+        sys.exit(f"daylog: некорректное начало {start!r}, нужен вид ЧЧ:ММ")
+    if not re.fullmatch(minute + "|24:00", end):
+        sys.exit(f"daylog: некорректный конец {end!r}, нужен вид ЧЧ:ММ")
+    if start >= end:
+        sys.exit(f"daylog: начало {start} должно быть раньше конца {end}")
+    reason = " ".join(reason.split())  # одна строка: переносы и повторы пробелов — в один пробел
+    if not reason:
+        sys.exit("daylog: причина паузы пуста")
+    append_jsonl(d / "pauses.jsonl", {"start": start, "end": end, "reason": reason,
+                                      "at": dt.datetime.now().isoformat(timespec="seconds")})
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     today = f"{dt.date.today()}"
@@ -463,5 +498,9 @@ if __name__ == "__main__":
         cmd_report(args[1] if len(args) > 1 else today)
     elif args[:1] == ["classify"]:
         cmd_classify(args[1] if len(args) > 1 else today)
+    elif args[:1] == ["pause"]:
+        if len(args) < 5:
+            sys.exit(f"daylog: {PAUSE_USAGE}")
+        cmd_pause(args[1], args[2], args[3], " ".join(args[4:]))
     else:
         sys.exit(__doc__)

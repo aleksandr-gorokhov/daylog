@@ -35,11 +35,12 @@ pub struct JobFinished {
     pub error: Option<String>,
 }
 
-/// Запускает `daylog.py <команда> <день>` и ждёт завершения. Ошибка — конец вывода команды.
-pub fn run_daylog(rt: &Runtime, command: &str, day: &str) -> Result<(), String> {
+/// Запускает `daylog.py <команда> <день> <остальные аргументы>` и ждёт завершения.
+/// Аргументы передаются как есть, без оболочки. Ошибка — конец вывода команды.
+pub fn run_daylog(rt: &Runtime, command: &str, day: &str, rest: &[&str]) -> Result<(), String> {
     check_day(day)?;
     let out = rt
-        .command(&[command, day])?
+        .command(&[&[command, day], rest].concat())?
         .output()
         .map_err(|e| format!("не удалось запустить {}: {e}", rt.script.display()))?;
     if out.status.success() {
@@ -52,7 +53,7 @@ pub fn run_daylog(rt: &Runtime, command: &str, day: &str) -> Result<(), String> 
 }
 
 pub fn run_report(rt: &Runtime, day: &str) -> Result<(), String> {
-    run_daylog(rt, "report", day)
+    run_daylog(rt, "report", day, &[])
 }
 
 /// Проверяет день, регистрирует команду в `jobs` и запускает её в отдельном потоке.
@@ -73,7 +74,7 @@ fn start_job(
         return Err(busy(&day));
     }
     std::thread::spawn(move || {
-        let result = run_daylog(&rt, command, &day);
+        let result = run_daylog(&rt, command, &day, &[]);
         jobs.finish(&day);
         on_done(JobFinished { ok: result.is_ok(), error: result.err(), day });
     });

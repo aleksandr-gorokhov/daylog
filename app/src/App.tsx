@@ -7,7 +7,9 @@ import {
   type DaySummary,
   errorText,
   onClassifyFinished,
+  onPausesChanged,
   onReportFinished,
+  type Pause,
   toCollectorError,
 } from "./api";
 import { CategorySummary } from "./components/CategorySummary";
@@ -15,9 +17,18 @@ import { Banner, ReportButton } from "./components/common";
 import { DayList } from "./components/DayList";
 import { DayStrip } from "./components/DayStrip";
 import { type Focus, MinutesTab } from "./components/MinutesTab";
+import { PauseList } from "./components/PauseList";
 import { type CollectorBusy, RecordControl } from "./components/RecordControl";
 import { TimelineTab } from "./components/TimelineTab";
-import { type CategoryKey, dayLong, filterMinutes, formatDuration, localDay, workMinutes } from "./logic";
+import {
+  type CategoryKey,
+  dayLong,
+  filterMinutes,
+  formatDuration,
+  localDay,
+  pauseTarget,
+  workMinutes,
+} from "./logic";
 import { usePolling } from "./usePolling";
 
 const POLL_MS = 15_000;
@@ -177,6 +188,16 @@ export default function App() {
     };
   }, [loadDays, loadDay]);
 
+  // Причина паузы записана (в этом окне или в окне с вопросом): перечитать открытый день.
+  useEffect(() => {
+    const unlisten = onPausesChanged((e) => {
+      if (selectedRef.current === e.day) loadDay(e.day);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [loadDay]);
+
   const generateReport = (d: string) => {
     setReportsRunning((s) => new Set(s).add(d));
     setReportErrors(({ [d]: _, ...rest }) => rest);
@@ -207,6 +228,17 @@ export default function App() {
       setCategoryFilter(null);
     }
     setFocus((f) => ({ t, seq: (f?.seq ?? 0) + 1 }));
+  };
+
+  const pickPause = (pause: Pause) => {
+    const t = day && pauseTarget(day.minutes, pause);
+    if (t) pickMinute(t);
+  };
+
+  /** Записывает причину и перечитывает день, чтобы список показал её сразу. */
+  const savePauseReason = async (d: string, pause: Pause, reason: string) => {
+    await api.setPauseReason(d, pause, reason);
+    await loadDay(d);
   };
 
   const toggleCategory = (category: CategoryKey) => {
@@ -269,12 +301,20 @@ export default function App() {
               onGenerate={() => generateReport(day.day)}
             />
           </section>
-          <CategorySummary
-            minutes={minutes}
-            selected={categoryFilter}
-            classifying={classifying.has(day.day)}
-            onToggle={toggleCategory}
-          />
+          <div className="side">
+            <CategorySummary
+              minutes={minutes}
+              selected={categoryFilter}
+              classifying={classifying.has(day.day)}
+              onToggle={toggleCategory}
+            />
+            <PauseList
+              key={day.day}
+              pauses={day.pauses}
+              onPick={pickPause}
+              onSave={(pause, reason) => savePauseReason(day.day, pause, reason)}
+            />
+          </div>
         </div>
       </>
     );

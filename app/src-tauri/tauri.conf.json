@@ -18,6 +18,21 @@
         "height": 760,
         "minWidth": 900,
         "minHeight": 600
+      },
+      {
+        "label": "pause-prompt",
+        "title": "daylog",
+        "width": 440,
+        "height": 360,
+        "center": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "visible": false,
+        "focus": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "acceptFirstMouse": true
       }
     ],
     "security": {
