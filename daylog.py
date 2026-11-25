@@ -9,8 +9,11 @@
 Данные в $DAYLOG_DIR (по умолчанию ~/.local/share/daylog), по каталогу на день:
 captures.jsonl, minutes.jsonl, report.md и report.json (таймлайн для приложения).
 
-Сборщик снимает экраны каждую минуту, пока Mac не спит, даже если ввода нет. Если ввода
-с клавиатуры и мыши не было 5 минут и дольше, минута получает пометку "idle" («нет ввода»).
+Сборщик снимает экраны каждую минуту, пока Mac не спит, даже если ввода нет, и пишет
+в строку минуты, сколько секунд не было ввода ("idle_sec"). Если ввода с клавиатуры и мыши
+не было 5 минут и дольше, это пауза: пометку «нет ввода» получают все минуты с последнего
+ввода, включая записанные до порога. Поэтому минута ждёт описания, пока не ясно, пауза
+это или нет: при работе — до следующего снимка, без ввода — до 5 минут.
 
 У каждой описанной минуты есть категория: work — рабочее, nonwork — нерабочее,
 idle — ничего не делал (явный простой на экране или «нет ввода» без созвона на экране).
@@ -42,7 +45,7 @@ from pathlib import Path
 DATA = Path(os.environ.get("DAYLOG_DIR", Path.home() / ".local/share/daylog"))
 MODEL = os.environ.get("DAYLOG_MODEL", "claude-opus-5-5")
 INTERVAL = 60        # секунд между кадрами
-IDLE_SEC = 300       # нет ввода столько и дольше — минута с пометкой idle («нет ввода»)
+IDLE_SEC = 300       # нет ввода столько и дольше — пауза: минуты с последнего ввода получают «нет ввода»
 CHUNK = 5            # минут на один вызов LLM
 MAX_SIDE = 1600      # до какого размера ужимать кадр
 KEEP_FRAMES = os.environ.get("DAYLOG_KEEP_FRAMES") == "1"  # иначе кадры удаляются после описания
@@ -57,7 +60,8 @@ CATEGORY_RULES = """Категория минуты (поле category):
 - idle — ничего не делал. Только если занятия явно нет: экран блокировки, заставка,
   пустой рабочий стол без открытых окон. Экран, не изменившийся с прошлой минуты, — не простой:
   человек мог читать. При сомнении выбирай work или nonwork по содержанию экрана.
-Если у минуты пометка «нет ввода» (5 минут и дольше никто не трогал клавиатуру и мышь):
+Если у минуты пометка «нет ввода» (минута из отрезка от 5 минут подряд, когда никто не трогал
+клавиатуру и мышь):
 - на снимке идёт созвон (окно Zoom, Google Meet, huddle в Slack или другого звонка) — work,
   а если звонок явно личный (Telegram, FaceTime с личным контактом) — nonwork;
 - созвона на снимке нет — idle, что бы ни было открыто на экране."""
@@ -70,8 +74,9 @@ DESCRIBE_SYSTEM = """Ты ведёшь журнал рабочего дня че
 Активное приложение подсказывает, на каком мониторе шла работа; второй монитор упоминай,
 только если он явно часть занятия. Пиши то, что видно на снимке, без догадок.
 Если соседние минуты про одно и то же, формулируй их одинаково.
-Если у минуты пометка «нет ввода», человек не трогал клавиатуру и мышь: при созвоне на снимке
-пиши «слушал созвон в Zoom „тема“», иначе — «пауза, на экране Slack #core».
+Если у минуты пометка «нет ввода», она из отрезка от 5 минут подряд, когда человек не трогал
+клавиатуру и мышь: при созвоне на снимке пиши «слушал созвон в Zoom „тема“», иначе —
+«пауза, на экране Slack #core».
 Пароли, токены и текст личных переписок не цитируй."""
 
 REPORT_SYSTEM = """Тебе дан поминутный журнал дня: «ЧЧ:ММ | категория | приложение | что делал».
@@ -257,16 +262,16 @@ def record_minute(now):
     """Одна минута сборщика: снимает экраны, даже если ввода нет. Возвращает строку,
     дописанную в captures.jsonl, или None, если снять не удалось.
 
-    Нет ввода IDLE_SEC и дольше — строка получает "idle": true, и LLM по снимку решает,
-    пауза это или созвон.
+    В строке "idle_sec" — целые секунды с последнего ввода. Набралось IDLE_SEC и больше —
+    ещё и "idle": true; минуты перед ней, снятые после того же ввода, помечает pending().
     """
     day, hhmm = f"{now:%Y-%m-%d}", f"{now:%H%M}"
-    idle = idle_seconds() >= IDLE_SEC
+    idle_sec = int(idle_seconds())
     frames = capture(day, hhmm)
     if not frames:
         return None
-    row = {"t": f"{now:%H:%M}", "app": front_app(), "frames": frames}
-    if idle:
+    row = {"t": f"{now:%H:%M}", "app": front_app(), "frames": frames, "idle_sec": idle_sec}
+    if idle_sec >= IDLE_SEC:
         row["idle"] = True
     d = day_dir(day)
     append_jsonl(d / "captures.jsonl", row)
@@ -298,9 +303,36 @@ def ask_claude(system, prompt, schema, cwd, tools=""):
     return out["structured_output"], out.get("total_cost_usd", 0.0)
 
 
-def pending(d):
+def minute_no(t):
+    """«ЧЧ:ММ» → номер минуты от полуночи."""
+    return int(t[:2]) * 60 + int(t[3:])
+
+
+def since_input(c):
+    """Номера минут от последнего ввода до снимка строки включительно."""
+    m = minute_no(c["t"])
+    return range(m - c.get("idle_sec", 0) // 60, m + 1)
+
+
+def pending(d, flush=False):
+    """Записанные, но не описанные минуты дня; минутам пауз проставлен "idle".
+
+    Пауза — все минуты от последнего ввода до строки, где без ввода набралось IDLE_SEC,
+    в том числе записанные до порога. Минуты после последнего ввода, пока порог не набран,
+    ещё могут стать паузой: без flush они не возвращаются, с flush — без пометки.
+    Строки без "idle_sec" (старые) помечены только своим "idle" и ожидания не создают.
+    """
     done = {m["t"] for m in read_jsonl(d / "minutes.jsonl")}
-    return [c for c in read_jsonl(d / "captures.jsonl") if c["t"] not in done]
+    captures = read_jsonl(d / "captures.jsonl")
+    paused = {m for c in captures if c.get("idle_sec", 0) >= IDLE_SEC for m in since_input(c)}
+    last = captures[-1] if captures else {}
+    undecided = () if flush or last.get("idle_sec", IDLE_SEC) >= IDLE_SEC else since_input(last)
+    todo = []
+    for c in captures:
+        m = minute_no(c["t"])
+        if c["t"] not in done and m not in undecided:
+            todo.append({**c, "idle": True} if m in paused else c)
+    return todo
 
 
 def cmd_summarize(day, flush=False):
@@ -311,7 +343,7 @@ def cmd_summarize(day, flush=False):
         except BlockingIOError:
             return  # уже работает другой процесс
         while True:
-            todo = pending(d)
+            todo = pending(d, flush)
             if not todo or (len(todo) < CHUNK and not flush):
                 return
             chunk = todo[:CHUNK]
@@ -322,7 +354,8 @@ def cmd_summarize(day, flush=False):
                 lines += [f"  {m['t']} {m['activity']}" for m in prev]
             lines.append("Минуты:")
             for c in chunk:
-                idle = " | нет ввода с клавиатуры и мыши 5 минут и дольше" if c.get("idle") else ""
+                idle = (" | нет ввода: минута из отрезка от 5 минут подряд без клавиатуры и мыши"
+                        if c.get("idle") else "")
                 lines.append(f"  {c['t']} | активное приложение: {c['app'] or '?'}{idle} | файлы: "
                              + ", ".join(f"frames/{f}" for f in c["frames"]))
             try:
